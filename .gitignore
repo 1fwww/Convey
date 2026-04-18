@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+*.swp
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+
+# Node (for web UI dev)
+node_modules/
+
+# ChatGPT history data (private)
+chatgpt_history/
+chatgpt_history.rtf
+grab_chat.js
+
+# Analysis scripts and output
+*.pyc
+__pycache__/
+
+# API keys
+.env

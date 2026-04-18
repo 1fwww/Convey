@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Convey</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #F2F2F4;
+    --surface: #FAFAFC;
+    --elevated: #EEEEF2;
+    --input: #F4F4F6;
+    --border-dim: rgba(0, 0, 0, 0.065);
+    --border-active: rgba(0, 0, 0, 0.11);
+    --brand: #6C63FF;
+    --brand-muted: rgba(108, 99, 255, 0.08);
+    --brand-border: rgba(108, 99, 255, 0.25);
+    --brand-btn: #635AEE;
+    --brand-hover: #5B53E0;
+    --brand-text: #5B53E0;
+    --green: #2DA44E;
+    --green-dim: rgba(45, 164, 78, 0.08);
+    --green-border: rgba(45, 164, 78, 0.18);
+    --error: #CF222E;
+    --error-dim: rgba(207, 34, 46, 0.07);
+    --blue: #0969DA;
+    --blue-dim: rgba(9, 105, 218, 0.07);
+    --text-primary: rgba(18, 18, 30, 0.90);
+    --text-secondary: rgba(55, 55, 75, 0.68);
+    --text-dim: rgba(95, 95, 118, 0.50);
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.03);
+    --shadow-lg: 0 8px 28px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.03);
+  }
+
+  body {
+    font-family: 'Outfit', -apple-system, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text-primary);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 32px 24px 80px;
+    min-height: 100vh;
+  }
+
+  .container { width: 720px; }
+
+  /* ============ TOP BAR ============ */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    padding: 0 2px;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 10px; }
+  .logo { font-size: 14px; font-weight: 600; color: var(--text-secondary); letter-spacing: 0.3px; }
+  .source-tag {
+    font-size: 11px; color: var(--text-dim); background: var(--elevated);
+    padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border-dim);
+  }
+  .topbar-right { display: flex; gap: 6px; }
+
+  .btn {
+    font-family: 'Outfit', sans-serif; font-size: 12px; font-weight: 500;
+    padding: 5px 14px; border-radius: var(--radius-sm); cursor: pointer;
+    transition: all 0.15s; border: none;
+  }
+  .btn-ghost {
+    color: var(--text-secondary); background: var(--surface); border: 1px solid var(--border-dim);
+  }
+  .btn-ghost:hover { border-color: var(--border-active); color: var(--text-primary); }
+  .btn-primary { color: white; background: var(--brand-btn); }
+  .btn-primary:hover { background: var(--brand-hover); }
+
+  /* ============ LAYOUT ============ */
+  .main { display: flex; gap: 14px; }
+  .col-editor { flex: 1; min-width: 0; }
+  .col-insight { width: 240px; flex-shrink: 0; }
+
+  /* ============ THE PAPER ============ */
+  .paper {
+    background: white;
+    border: 1px solid var(--border-dim);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+    height: 340px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* -- Paper inner scroll area -- */
+  .paper-scroll {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  /* -- Previous versions (dimmed, dashed separator) -- */
+  .prev-versions {
+    flex-shrink: 0;
+  }
+
+  .prev-version {
+    padding: 10px 20px;
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--text-dim);
+    border-bottom: 1px dashed rgba(0, 0, 0, 0.08);
+    cursor: pointer;
+    transition: all 0.12s;
+    position: relative;
+  }
+
+  .prev-version:hover {
+    color: var(--text-secondary);
+    background: rgba(108, 99, 255, 0.03);
+  }
+
+  .prev-version .restore {
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 10px;
+    color: var(--brand-text);
+    font-weight: 500;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+
+  .prev-version:hover .restore { opacity: 1; }
+
+  /* -- Main editor -- */
+  .paper-editor {
+    flex: 1;
+    padding: 14px 20px;
+    font-family: 'Outfit', sans-serif;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.75;
+    color: var(--text-primary);
+    outline: none;
+    border: none;
+    background: white;
+    min-height: 80px;
+  }
+
+  .paper-editor:focus { background: white; }
+
+  /* -- AI version (dashed border, temporary feel) -- */
+  .ai-suggestion {
+    margin: 0 12px 10px;
+    padding: 12px 14px;
+    border: 1.5px dashed rgba(45, 164, 78, 0.35);
+    border-radius: var(--radius-sm);
+    background: rgba(45, 164, 78, 0.02);
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    position: relative;
+  }
+
+  .ai-suggestion-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .ai-suggestion-actions button {
+    font-family: 'Outfit', sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+
+  .btn-apply {
+    color: var(--green); background: var(--green-dim); border: 1px solid var(--green-border);
+  }
+  .btn-apply:hover { background: rgba(45, 164, 78, 0.15); }
+
+  .btn-skip {
+    color: var(--text-dim); background: none; border: 1px solid var(--border-dim);
+  }
+  .btn-skip:hover { color: var(--text-secondary); }
+
+  .diff-add {
+    color: var(--green); background: var(--green-dim);
+    padding: 1px 3px; border-radius: 3px; font-weight: 500;
+  }
+  .diff-remove {
+    color: var(--error); background: var(--error-dim);
+    padding: 1px 3px; border-radius: 3px; text-decoration: line-through;
+  }
+
+  /* -- Toolbar (Slack-style) -- */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 12px 6px;
+    border-bottom: 1px solid var(--border-dim);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+
+  .toolbar-btn {
+    width: 28px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: none;
+    color: var(--text-dim);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    transition: all 0.1s;
+    font-family: 'Georgia', serif;
+  }
+
+  .toolbar-btn:hover {
+    background: var(--elevated);
+    color: var(--text-secondary);
+  }
+
+  .toolbar-btn.italic { font-style: italic; font-weight: 400; }
+  .toolbar-btn.strike { text-decoration: line-through; font-weight: 400; font-family: 'Outfit', sans-serif; }
+  .toolbar-btn.code { font-family: monospace; font-size: 12px; font-weight: 400; }
+  .toolbar-btn.link { font-size: 12px; font-weight: 400; font-family: 'Outfit', sans-serif; }
+  .toolbar-btn.list { font-size: 11px; font-weight: 400; font-family: 'Outfit', sans-serif; }
+  .toolbar-btn.quote { font-size: 16px; font-weight: 400; }
+
+  .toolbar-sep {
+    width: 1px;
+    height: 16px;
+    background: var(--border-dim);
+    margin: 0 4px;
+  }
+
+  .toolbar-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .toolbar-meta {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-family: 'Outfit', sans-serif;
+    margin-right: 4px;
+  }
+
+  /* ============ AI INPUT ============ */
+  .ai-input {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border-dim);
+    border-radius: var(--radius-sm);
+    padding: 9px 14px;
+    font-family: 'Outfit', sans-serif;
+    font-size: 12px;
+    color: var(--text-primary);
+    outline: none;
+    margin-top: 8px;
+    transition: all 0.15s;
+  }
+  .ai-input::placeholder { color: var(--text-dim); }
+  .ai-input:focus { border-color: var(--border-active); }
+
+  /* ============ INSIGHT PANEL ============ */
+  .insight-panel { display: flex; flex-direction: column; gap: 10px; }
+
+  .affirm {
+    background: var(--green-dim); border: 1px solid var(--green-border);
+    border-radius: var(--radius-sm); padding: 10px 12px;
+    font-size: 11.5px; line-height: 1.55; color: var(--green);
+  }
+
+  .card-header { display: flex; align-items: center; justify-content: space-between; padding: 0 2px; }
+  .card-header-label { font-size: 11px; font-weight: 500; color: var(--text-dim); }
+
+  .card {
+    background: white; border: 1px solid var(--border-dim);
+    border-radius: var(--radius-md); padding: 14px;
+    box-shadow: var(--shadow-sm); transition: border-color 0.15s;
+  }
+  .card:hover { border-color: var(--border-active); }
+
+  .card-tag {
+    display: inline-block; font-size: 9px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.7px;
+    padding: 2px 6px; border-radius: 4px; margin-bottom: 8px;
+  }
+  .tag-grammar { color: var(--error); background: var(--error-dim); }
+  .tag-natural { color: var(--blue); background: var(--blue-dim); }
+  .tag-style { color: var(--brand-text); background: var(--brand-muted); }
+
+  .card-original { font-size: 12px; color: var(--text-dim); text-decoration: line-through; margin-bottom: 2px; }
+  .card-suggestion { font-size: 13px; color: var(--text-primary); font-weight: 500; margin-bottom: 8px; }
+
+  .card-explanation {
+    font-size: 11.5px; color: var(--text-secondary); line-height: 1.55;
+    padding: 8px 10px; background: var(--elevated); border-radius: 6px;
+    border-left: 2px solid var(--border-active);
+  }
+
+  .card-repeat {
+    font-size: 10px; color: var(--text-dim); margin-top: 8px;
+    padding-top: 6px; border-top: 1px solid var(--border-dim);
+  }
+
+  .card-nav {
+    display: flex; align-items: center; justify-content: center;
+    gap: 8px; margin-top: 10px;
+  }
+  .card-nav button {
+    background: none; border: 1px solid var(--border-dim); color: var(--text-dim);
+    width: 24px; height: 24px; border-radius: 50%; cursor: pointer;
+    font-size: 11px; display: flex; align-items: center; justify-content: center;
+    transition: all 0.12s;
+  }
+  .card-nav button:hover { border-color: var(--border-active); color: var(--text-primary); }
+  .card-nav .pip { width: 5px; height: 5px; border-radius: 50%; background: var(--border-dim); }
+  .card-nav .pip.active { background: var(--brand); }
+
+  /* ============ SWITCHER ============ */
+  .switcher {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    display: flex; background: white; border: 1px solid var(--border-dim);
+    border-radius: 20px; padding: 3px; z-index: 100; box-shadow: var(--shadow-md);
+  }
+  .sw-btn {
+    font-family: 'Outfit', sans-serif; padding: 5px 14px; font-size: 11px;
+    font-weight: 500; color: var(--text-dim); background: none; border: none;
+    border-radius: 17px; cursor: pointer; transition: all 0.12s; white-space: nowrap;
+  }
+  .sw-btn:hover { color: var(--text-secondary); }
+  .sw-btn.active { background: var(--brand-btn); color: white; }
+
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* Empty */
+  .paper-empty {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; color: var(--text-dim); font-size: 13px; line-height: 1.8;
+  }
+  kbd {
+    background: var(--elevated); border: 1px solid var(--border-dim);
+    padding: 2px 6px; border-radius: 4px; font-size: 11px; font-family: 'Outfit', sans-serif;
+  }
+</style>
+</head>
+<body>
+
+<div class="switcher">
+  <button class="sw-btn active" onclick="show('v-default')">Default</button>
+  <button class="sw-btn" onclick="show('v-ai')">With AI</button>
+  <button class="sw-btn" onclick="show('v-history')">With history</button>
+  <button class="sw-btn" onclick="show('v-all')">All</button>
+  <button class="sw-btn" onclick="show('v-empty')">Empty</button>
+</div>
+
+<!-- ====== DEFAULT — just editor + toolbar ====== -->
+<div class="view active" id="v-default">
+<div class="container">
+  <div class="topbar">
+    <div class="topbar-left">
+      <span class="logo">Convey</span>
+      <span class="source-tag">Slack</span>
+    </div>
+    <div class="topbar-right">
+      <button class="btn btn-ghost">Copy</button>
+      <button class="btn btn-primary">Send back</button>
+    </div>
+  </div>
+  <div class="main">
+    <div class="col-editor">
+      <div class="paper">
+        <div class="toolbar">
+          <button class="toolbar-btn" title="Bold">B</button>
+          <button class="toolbar-btn italic" title="Italic">I</button>
+          <button class="toolbar-btn strike" title="Strikethrough">S</button>
+          <div class="toolbar-sep"></div>
+          <button class="toolbar-btn link" title="Link">&#128279;</button>
+          <button class="toolbar-btn list" title="List">&#8226;</button>
+          <button class="toolbar-btn list" title="Ordered list">1.</button>
+          <button class="toolbar-btn quote" title="Quote">&#8220;</button>
+          <button class="toolbar-btn code" title="Code">&lt;/&gt;</button>
+          <div class="toolbar-right">
+            <span class="toolbar-meta">42 words</span>
+          </div>
+        </div>
+        <div class="paper-scroll">
+          <div class="paper-editor" contenteditable="true">I just knew from Katie that we should no longer have social icons in email footer. And this is what it should be (see screenshot). Sharing in case you also didn't know.</div>
+        </div>
+      </div>
+      <input class="ai-input" placeholder="Ask AI... (e.g. make it warmer, more direct)">
+    </div>
+    <div class="col-insight">
+      <div class="insight-panel">
+        <div class="affirm">Clear intent, good casual tone. "Sharing in case you also didn't know" — nice collaborative touch.</div>
+        <div class="card-header"><span class="card-header-label">1 / 3</span></div>
+        <div class="card">
+          <span class="card-tag tag-grammar">Grammar</span>
+          <div class="card-original">"I just knew from Katie"</div>
+          <div class="card-suggestion">"I just <strong>learned</strong> from Katie"</div>
+          <div class="card-explanation">中文"刚知道"自然对应 "just knew"，但英文里 "knew" 是持续状态（I knew it all along）。表达"刚得知"要用 learned 或 found out。</div>
+          <div class="card-nav">
+            <button>&larr;</button>
+            <span class="pip active"></span><span class="pip"></span><span class="pip"></span>
+            <button>&rarr;</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ====== WITH AI — dashed box below editor ====== -->
+<div class="view" id="v-ai">
+<div class="container">
+  <div class="topbar">
+    <div class="topbar-left">
+      <span class="logo">Convey</span>
+      <span class="source-tag">Slack</span>
+    </div>
+    <div class="topbar-right">
+      <button class="btn btn-ghost">Copy</button>
+      <button class="btn btn-primary">Send back</button>
+    </div>
+  </div>
+  <div class="main">
+    <div class="col-editor">
+      <div class="paper">
+        <div class="toolbar">
+          <button class="toolbar-btn" title="Bold">B</button>
+          <button class="toolbar-btn italic" title="Italic">I</button>
+          <button class="toolbar-btn strike" title="Strikethrough">S</button>
+          <div class="toolbar-sep"></div>
+          <button class="toolbar-btn link" title="Link">&#128279;</button>
+          <button class="toolbar-btn list" title="List">&#8226;</button>
+          <button class="toolbar-btn list" title="Ordered list">1.</button>
+          <button class="toolbar-btn quote" title="Quote">&#8220;</button>
+          <button class="toolbar-btn code" title="Code">&lt;/&gt;</button>
+          <div class="toolbar-right">
+            <span class="toolbar-meta">42 words</span>
+          </div>
+        </div>
+        <div class="paper-scroll">
+          <div class="paper-editor" contenteditable="true">I just knew from Katie that we should no longer have social icons in email footer. And this is what it should be (see screenshot). Sharing in case you also didn't know.</div>
+          <div class="ai-suggestion">
+            I just <span class="diff-add">learned</span> from Katie that we should no longer have social icons in <span class="diff-add">the</span> email footer. <span class="diff-remove">And this</span> <span class="diff-add">This</span> is what it should <span class="diff-remove">be</span> <span class="diff-add">look like</span> (see screenshot). Sharing in case you didn't know <span class="diff-add">either</span>.
+            <div class="ai-suggestion-actions">
+              <button class="btn-apply">Use this</button>
+              <button class="btn-skip">Dismiss</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <input class="ai-input" placeholder="Ask AI... (e.g. make it warmer, more direct)">
+    </div>
+    <div class="col-insight">
+      <div class="insight-panel">
+        <div class="affirm">Clear intent, good casual tone. "Sharing in case you also didn't know" — nice collaborative touch.</div>
+        <div class="card-header"><span class="card-header-label">2 / 3</span></div>
+        <div class="card">
+          <span class="card-tag tag-natural">Naturalness</span>
+          <div class="card-original">"in email footer"</div>
+          <div class="card-suggestion">"in <strong>the</strong> email footer"</div>
+          <div class="card-explanation">指代一个具体的、双方都知道的东西时，英文用 "the"。中文没有冠词，这个点需要靠语感积累。</div>
+          <div class="card-repeat">This pattern appeared 3 times last month</div>
+          <div class="card-nav">
+            <button>&larr;</button>
+            <span class="pip"></span><span class="pip active"></span><span class="pip"></span>
+            <button>&rarr;</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ====== WITH HISTORY ====== -->
+<div class="view" id="v-history">
+<div class="container">
+  <div class="topbar">
+    <div class="topbar-left">
+      <span class="logo">Convey</span>
+      <span class="source-tag">Slack</span>
+    </div>
+    <div class="topbar-right">
+      <button class="btn btn-ghost">Copy</button>
+      <button class="btn btn-primary">Send back</button>
+    </div>
+  </div>
+  <div class="main">
+    <div class="col-editor">
+      <div class="paper">
+        <div class="toolbar">
+          <button class="toolbar-btn" title="Bold">B</button>
+          <button class="toolbar-btn italic" title="Italic">I</button>
+          <button class="toolbar-btn strike" title="Strikethrough">S</button>
+          <div class="toolbar-sep"></div>
+          <button class="toolbar-btn link" title="Link">&#128279;</button>
+          <button class="toolbar-btn list" title="List">&#8226;</button>
+          <button class="toolbar-btn list" title="Ordered list">1.</button>
+          <button class="toolbar-btn quote" title="Quote">&#8220;</button>
+          <button class="toolbar-btn code" title="Code">&lt;/&gt;</button>
+          <div class="toolbar-right">
+            <span class="toolbar-meta">42 words &middot; v3</span>
+          </div>
+        </div>
+        <div class="paper-scroll">
+          <div class="prev-versions">
+            <div class="prev-version">
+              fyi I just knew from Katie that we should no longer have social icons in email footer. And this is what it should be (see screenshot). Sharing in case you also didn't know. (and also I just knew that Katie was back hired for contract :star2:
+              <span class="restore">Restore</span>
+            </div>
+            <div class="prev-version">
+              I just knew from Katie that we should no longer have social icons in email footer. And this is what it should be (see screenshot). Sharing in case you also didn't know.
+              <span class="restore">Restore</span>
+            </div>
+          </div>
+          <div class="paper-editor" contenteditable="true">I just knew from Katie that we should no longer have social icons in email footer. And this is what it should be (see screenshot). Sharing in case you also didn't know.</div>
+        </div>
+      </div>
+      <input class="ai-input" placeholder="Ask AI... (e.g. make it warmer, more direct)">
+    </div>
+    <div class="col-insight">
+      <div class="insight-panel">
+        <div class="affirm">Clear intent, good casual tone. "Sharing in case you also didn't know" — nice collaborative touch.</div>
+        <div class="card-header"><span class="card-header-label">3 / 3</span></div>
+        <div class="card">
+          <span class="card-tag tag-style">Style</span>
+          <div class="card-original">"And this is what it should be"</div>
+          <div class="card-suggestion">"<strong>This</strong> is what it should <strong>look like</strong>"</div>
+          <div class="card-explanation">短消息里 "And" 开头会让句子显得 run-on。去掉更干脆。指代截图时 "look like" 比 "be" 更具体。</div>
+          <div class="card-nav">
+            <button>&larr;</button>
+            <span class="pip"></span><span class="pip"></span><span class="pip active"></span>
+            <button>&rarr;</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ====== ALL ====== -->
+<div class="view" id="v-all">
+<div class="container">
+  <div class="topbar">
+    <div class="topbar-left">
+      <span class="logo">Convey</span>
+      <span class="source-tag">Slack</span>
+    </div>
+    <div class="topbar-right">
+      <button class="btn btn-ghost">Copy</button>
+      <button class="btn btn-primary">Send back</button>
+    </div>
+  </div>
+  <div class="main">
+    <div class="col-editor">
+      <div class="paper">
+        <div class="toolbar">
+          <button class="toolbar-btn" title="Bold">B</button>
+          <button class="toolbar-btn italic" title="Italic">I</button>
+          <button class="toolbar-btn strike" title="Strikethrough">S</button>
+          <div class="toolbar-sep"></div>
+          <button class="toolbar-btn link" title="Link">&#128279;</button>
+          <button class="toolbar-btn list" title="List">&#8226;</button>
+          <button class="toolbar-btn list" title="Ordered list">1.</button>
+          <button class="toolbar-btn quote" title="Quote">&#8220;</button>
+          <button class="toolbar-btn code" title="Code">&lt;/&gt;</button>
+          <div class="toolbar-right">
+            <span class="toolbar-meta">37 words &middot; v3</span>
+          </div>
+        </div>
+        <div class="paper-scroll">
+          <div class="prev-versions">
+            <div class="prev-version">
+              fyi I just knew from Katie that we should no longer have social icons in email footer. And this is what it should be (see screenshot). Sharing in case you also didn't know. (and also I just knew that Katie was back hired for contract :star2:
+              <span class="restore">Restore</span>
+            </div>
+          </div>
+          <div class="paper-editor" contenteditable="true">I just learned from Katie that we should no longer have social icons in the email footer. This is what it should look like (see screenshot). Sharing in case you didn't know either.</div>
+          <div class="ai-suggestion">
+            I just <span class="diff-add">learned</span> from Katie that we should no longer have social icons in <span class="diff-add">the</span> email footer. <span class="diff-remove">And this</span> <span class="diff-add">This</span> is what it should <span class="diff-remove">be</span> <span class="diff-add">look like</span> (see screenshot). Sharing in case you didn't know <span class="diff-add">either</span>.
+            <div class="ai-suggestion-actions">
+              <button class="btn-apply" style="opacity:0.5">Applied</button>
+              <button class="btn-skip">Revert</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <input class="ai-input" placeholder="Ask AI... (e.g. make it warmer, more direct)">
+    </div>
+    <div class="col-insight">
+      <div class="insight-panel">
+        <div class="affirm">Clear intent, good casual tone. "Sharing in case you also didn't know" — nice collaborative touch.</div>
+        <div class="card-header"><span class="card-header-label">1 / 3</span></div>
+        <div class="card">
+          <span class="card-tag tag-grammar">Grammar</span>
+          <div class="card-original">"I just knew from Katie"</div>
+          <div class="card-suggestion">"I just <strong>learned</strong> from Katie" &#10003;</div>
+          <div class="card-explanation">中文"刚知道"自然对应 "just knew"，但英文里 "knew" 是持续状态。表达"刚得知"要用 learned 或 found out。</div>
+          <div class="card-repeat" style="color:var(--green)">Applied in current edit</div>
+          <div class="card-nav">
+            <button>&larr;</button>
+            <span class="pip active"></span><span class="pip"></span><span class="pip"></span>
+            <button>&rarr;</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ====== EMPTY ====== -->
+<div class="view" id="v-empty">
+<div class="container">
+  <div class="topbar">
+    <div class="topbar-left"><span class="logo">Convey</span></div>
+  </div>
+  <div class="main">
+    <div class="col-editor">
+      <div class="paper">
+        <div class="toolbar">
+          <button class="toolbar-btn" title="Bold">B</button>
+          <button class="toolbar-btn italic" title="Italic">I</button>
+          <button class="toolbar-btn strike" title="Strikethrough">S</button>
+          <div class="toolbar-sep"></div>
+          <button class="toolbar-btn link" title="Link">&#128279;</button>
+          <button class="toolbar-btn list" title="List">&#8226;</button>
+          <button class="toolbar-btn list" title="Ordered list">1.</button>
+          <button class="toolbar-btn quote" title="Quote">&#8220;</button>
+          <button class="toolbar-btn code" title="Code">&lt;/&gt;</button>
+        </div>
+        <div class="paper-empty" contenteditable="true">
+          Paste text or start typing<br><br><kbd>⌘⇧C</kbd> from any app
+        </div>
+      </div>
+    </div>
+    <div class="col-insight">
+      <div style="padding:24px 12px;text-align:center;color:var(--text-dim);font-size:12px;line-height:1.7">
+        Suggestions will appear here
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+function show(id) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  const names = {'v-default':'Default','v-ai':'With AI','v-history':'With history','v-all':'All','v-empty':'Empty'};
+  document.querySelectorAll('.sw-btn').forEach(b => {
+    b.classList.remove('active');
+    if (b.textContent === names[id]) b.classList.add('active');
+  });
+}
+</script>
+
+</body>
+</html>
