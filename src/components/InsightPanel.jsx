@@ -1,12 +1,17 @@
-import { useState } from 'react'
-
-export function InsightPanel({ result, isLoading }) {
-  const [currentCard, setCurrentCard] = useState(0)
-
+export function InsightPanel({ result, isLoading, streamPhase }) {
   if (isLoading) {
     return (
       <div className="insight-panel">
-        <div className="insight-loading">Analyzing...</div>
+        <div className="insight-loading-anim">
+          <div className="loading-quill">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+            </svg>
+          </div>
+          <span className="loading-label">
+            {streamPhase === 'streaming' ? 'Reading...' : 'Thinking...'}
+          </span>
+        </div>
       </div>
     )
   }
@@ -22,8 +27,13 @@ export function InsightPanel({ result, isLoading }) {
   }
 
   const { affirm, changes } = result
-  const card = changes?.[currentCard]
-  const total = changes?.length || 0
+  const totalChanges = changes?.length || 0
+
+  // Pick the most interesting change as the key insight
+  // Prefer grammar > naturalness > others, or just the first with an explanation
+  const keyInsight = changes?.find(c => c.category === 'grammar')
+    || changes?.find(c => c.category === 'naturalness')
+    || changes?.[0]
 
   return (
     <div className="insight-panel">
@@ -31,46 +41,28 @@ export function InsightPanel({ result, isLoading }) {
         <div className="affirm">{affirm}</div>
       )}
 
-      {card && (
-        <>
-          <div className="card-header">
-            <span className="card-header-label">{currentCard + 1} / {total}</span>
-          </div>
-          <div className="card">
-            <span className={`card-tag tag-${card.category}`}>
-              {card.category}
-            </span>
-            <div className="card-original">&ldquo;{card.original}&rdquo;</div>
-            <div className="card-suggestion">
-              &ldquo;<strong>{card.revised}</strong>&rdquo;
-            </div>
-            <div className="card-explanation">{card.explanation}</div>
+      {totalChanges > 0 && (
+        <div className="insight-summary">
+          <span className="insight-summary-count">{totalChanges} change{totalChanges > 1 ? 's' : ''}</span>
+          <span className="insight-summary-hint">Hover highlighted words to see why</span>
+        </div>
+      )}
 
-            {total > 1 && (
-              <nav className="card-nav">
-                <button
-                  onClick={() => setCurrentCard(i => Math.max(0, i - 1))}
-                  disabled={currentCard === 0}
-                >
-                  &larr;
-                </button>
-                {changes.map((_, i) => (
-                  <span
-                    key={i}
-                    className={`pip ${i === currentCard ? 'active' : ''}`}
-                    onClick={() => setCurrentCard(i)}
-                  />
-                ))}
-                <button
-                  onClick={() => setCurrentCard(i => Math.min(total - 1, i + 1))}
-                  disabled={currentCard === total - 1}
-                >
-                  &rarr;
-                </button>
-              </nav>
-            )}
+      {keyInsight && (
+        <div className="key-insight">
+          <div className="key-insight-label">Key takeaway</div>
+          <div className="key-insight-body">
+            <span className={`card-tag tag-${keyInsight.category}`}>
+              {keyInsight.category}
+            </span>
+            <div className="key-insight-change">
+              <span className="key-insight-original">{keyInsight.original}</span>
+              <span className="key-insight-arrow">&rarr;</span>
+              <span className="key-insight-revised">{keyInsight.revised}</span>
+            </div>
+            <div className="key-insight-explanation">{keyInsight.explanation}</div>
           </div>
-        </>
+        </div>
       )}
     </div>
   )

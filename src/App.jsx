@@ -1,16 +1,16 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { Editor } from './components/Editor'
 import { InsightPanel } from './components/InsightPanel'
 import { AISuggestion } from './components/AISuggestion'
 import { Toolbar } from './components/Toolbar'
-import { AIInput } from './components/AIInput'
-import { FloatingRefine } from './components/FloatingRefine'
+import { RefineAnchor } from './components/RefineAnchor'
 import { analyzeText } from './services/ai'
 
 export default function App() {
   const [versions, setVersions] = useState([])
   const [aiResult, setAiResult] = useState(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [streamPhase, setStreamPhase] = useState('idle') // 'idle' | 'connecting' | 'streaming'
   const [mainEditor, setMainEditor] = useState(null)
   const [activeEditor, setActiveEditor] = useState('main')
 
@@ -20,21 +20,52 @@ export default function App() {
 
   const isZoomed = zoomState !== null
 
+  // Paper: dynamic height, only grows within a session
+  const paperRef = useRef(null)
+  const paperMaxObserved = useRef(0)
+
+  useEffect(() => {
+    const el = paperRef.current
+    if (!el) return
+    const BREATHING_ROOM = 48 // px of extra space below content
+    const observer = new ResizeObserver(() => {
+      // Measure the natural content height (toolbar + scroll content)
+      const scrollEl = el.querySelector('.paper-scroll')
+      if (!scrollEl) return
+      const contentH = scrollEl.scrollHeight + el.querySelector('.toolbar')?.offsetHeight + BREATHING_ROOM
+      const clamped = Math.min(contentH, 600) // respect max-height
+      if (clamped > paperMaxObserved.current) {
+        paperMaxObserved.current = clamped
+        el.style.minHeight = `${clamped}px`
+      }
+    })
+    observer.observe(el)
+    // Also observe the scroll area for content changes
+    const scrollEl = el.querySelector('.paper-scroll')
+    if (scrollEl) observer.observe(scrollEl)
+    return () => observer.disconnect()
+  }, [])
+
   const currentEditor = activeEditor === 'ai' ? null : mainEditor
 
   const handleContentReady = useCallback(async (editor) => {
     const html = editor.getHTML()
     if (!html || html === '<p></p>') return
 
+    setAiResult(null)
     setIsAnalyzing(true)
+    setStreamPhase('connecting')
     try {
-      const result = await analyzeText(html)
+      const result = await analyzeText(html, null, {
+        onStreamStart: () => setStreamPhase('streaming'),
+      })
       setAiResult(result)
     } catch (err) {
       console.error('AI analysis failed:', err)
       alert('AI analysis failed: ' + err.message)
     }
     setIsAnalyzing(false)
+    setStreamPhase('idle')
   }, [])
 
   const handleDismissAI = useCallback(() => {
@@ -73,14 +104,19 @@ export default function App() {
   const handleRefine = useCallback(async (instruction) => {
     if (!mainEditor) return
     const html = mainEditor.getHTML()
+    setAiResult(null)
     setIsAnalyzing(true)
+    setStreamPhase('connecting')
     try {
-      const result = await analyzeText(html, instruction || null)
+      const result = await analyzeText(html, instruction || null, {
+        onStreamStart: () => setStreamPhase('streaming'),
+      })
       setAiResult(result)
     } catch (err) {
       console.error('AI refine failed:', err)
     }
     setIsAnalyzing(false)
+    setStreamPhase('idle')
   }, [mainEditor])
 
   // Floating refine — zoom into selected text
@@ -97,17 +133,22 @@ export default function App() {
     mainEditor.commands.setContent(selectedText)
 
     // Trigger AI analysis on the selection
+    setAiResult(null)
     setIsAnalyzing(true)
+    setStreamPhase('connecting')
     try {
       const prompt = instruction
         ? `Improve this text: "${selectedText}"\nInstruction: ${instruction}`
         : null
-      const result = await analyzeText(`<p>${selectedText}</p>`, prompt)
+      const result = await analyzeText(`<p>${selectedText}</p>`, prompt, {
+        onStreamStart: () => setStreamPhase('streaming'),
+      })
       setAiResult(result)
     } catch (err) {
       console.error('AI refine failed:', err)
     }
     setIsAnalyzing(false)
+    setStreamPhase('idle')
   }, [mainEditor])
 
   // Zoom out — merge edited fragment back into full text
@@ -143,7 +184,17 @@ export default function App() {
     mainEditor.commands.setContent(newFullHTML)
     setZoomState(null)
     setAiResult(null)
-    mainEditor.commands.focus()
+
+    // Restore selection on the edited region so user sees what was changed
+    setTimeout(() => {
+      const fullText = mainEditor.getText()
+      const idx = fullText.indexOf(editedText)
+      if (idx >= 0) {
+        // +1 offset for ProseMirror doc node
+        mainEditor.commands.setTextSelection({ from: idx + 1, to: idx + 1 + editedText.length })
+      }
+      mainEditor.commands.focus()
+    }, 50)
   }, [mainEditor, zoomState])
 
   const handleCopy = useCallback(() => {
@@ -195,7 +246,7 @@ export default function App() {
 
       <main className="main-layout">
         <section className="col-editor" aria-label="Editor">
-          <div className="paper">
+          <div className="paper" ref={paperRef}>
             <Toolbar
               editor={currentEditor || mainEditor}
               versions={isZoomed ? [] : versions}
@@ -210,10 +261,20 @@ export default function App() {
               />
 
               {!isZoomed && (
-                <FloatingRefine
+                <RefineAnchor
                   editor={mainEditor}
-                  onSubmit={handleFloatingRefine}
+                  onRefineAll={handleRefine}
+                  onRefineSelection={handleFloatingRefine}
+                  isLoading={isAnalyzing}
                 />
+              )}
+
+              {isAnalyzing && (
+                <div className="ai-suggestion-loading">
+                  <div className="shimmer-line" style={{ width: '92%' }} />
+                  <div className="shimmer-line" style={{ width: '78%' }} />
+                  <div className="shimmer-line" style={{ width: '85%' }} />
+                </div>
               )}
 
               {aiResult && !aiResult.applied && (
@@ -226,18 +287,13 @@ export default function App() {
               )}
             </div>
           </div>
-
-          <AIInput
-            onSubmit={handleRefine}
-            isLoading={isAnalyzing}
-            editor={mainEditor}
-          />
         </section>
 
         <aside className="col-insight" aria-label="Suggestions">
           <InsightPanel
             result={aiResult}
             isLoading={isAnalyzing}
+            streamPhase={streamPhase}
           />
         </aside>
       </main>

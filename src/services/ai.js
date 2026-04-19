@@ -48,7 +48,7 @@ Return ONLY valid JSON in this exact format:
   ]
 }`
 
-export async function analyzeText(html, instruction = null) {
+export async function analyzeText(html, instruction = null, { onStreamStart } = {}) {
   // For development: use mock data if no API key
   if (!ANTHROPIC_API_KEY) {
     return getMockResult()
@@ -68,8 +68,9 @@ export async function analyzeText(html, instruction = null) {
       'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 2048,
+      stream: true,
       system: systemPrompt,
       messages: [{ role: 'user', content: userMessage }],
     }),
@@ -81,16 +82,44 @@ export async function analyzeText(html, instruction = null) {
     throw new Error(`API error ${response.status}: ${errText}`)
   }
 
-  const data = await response.json()
-  console.log('AI raw response:', data)
-  const text = data.content?.[0]?.text
-  if (!text) throw new Error('No response from AI')
+  // Stream SSE events
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let fullText = ''
+  let streamStarted = false
 
-  console.log('AI text:', text)
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() // Keep incomplete line in buffer
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue
+      const data = line.slice(6).trim()
+      if (!data || data === '[DONE]') continue
+
+      try {
+        const event = JSON.parse(data)
+        if (event.type === 'content_block_delta' && event.delta?.text) {
+          if (!streamStarted) {
+            streamStarted = true
+            if (onStreamStart) onStreamStart()
+          }
+          fullText += event.delta.text
+        }
+      } catch { /* skip malformed events */ }
+    }
+  }
+
+  console.log('AI streamed text:', fullText)
 
   // Parse JSON from response
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) throw new Error('Invalid AI response format: ' + text.substring(0, 200))
+  const jsonMatch = fullText.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) throw new Error('Invalid AI response format: ' + fullText.substring(0, 200))
 
   const parsed = JSON.parse(jsonMatch[0])
   console.log('AI parsed:', parsed)
