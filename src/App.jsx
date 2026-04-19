@@ -71,7 +71,19 @@ export default function App() {
   const handleDismissAI = useCallback(() => {
     setAiResult(null)
     setActiveEditor('main')
-  }, [])
+
+    if (isZoomed && mainEditor && zoomState) {
+      const { fullHTML, selectedText, from, to } = zoomState
+      setZoomState(null)
+      mainEditor.commands.setContent(fullHTML)
+      // Highlight the original selection range
+      setTimeout(() => {
+        if (mainEditor.highlightRange) {
+          mainEditor.highlightRange(from, to)
+        }
+      }, 30)
+    }
+  }, [isZoomed, mainEditor, zoomState])
 
   const handleRestore = useCallback((html) => {
     if (!mainEditor) return
@@ -83,14 +95,46 @@ export default function App() {
   const handleReplace = useCallback((html) => {
     if (!mainEditor) return
 
-    if (isZoomed) {
-      // Replacing within a zoom — put the edited part back into the full text
-      // Store the edited fragment, we'll merge on zoom-out
-      setZoomState(prev => prev ? { ...prev, editedHTML: html } : null)
-      setAiResult(prev => ({ ...prev, applied: true }))
-      mainEditor.commands.setContent(html)
+    if (isZoomed && zoomState) {
+      // Apply and zoom out in one step — merge edited fragment back
+      const { fullHTML, selectedText, leadingSpace, trailingSpace } = zoomState
+
+      setVersions(prev => [...prev, fullHTML])
+
+      // Get the edited text, restore preserved whitespace
+      const editedDiv = document.createElement('div')
+      editedDiv.innerHTML = html
+      let editedText = editedDiv.textContent || ''
+      editedText = leadingSpace + editedText.trim() + trailingSpace
+
+      // Merge back into full text
+      const tempDiv = document.createElement('div')
+      tempDiv.innerHTML = fullHTML
+      const fullText = tempDiv.textContent || ''
+
+      let newFullHTML = fullHTML
+      if (fullText.includes(selectedText)) {
+        const idx = fullText.indexOf(selectedText)
+        const before = fullText.substring(0, idx)
+        const after = fullText.substring(idx + selectedText.length)
+        newFullHTML = `<p>${before}${editedText}${after}</p>`
+      }
+
+      setZoomState(null)
+      setAiResult(null)
       setActiveEditor('main')
-      mainEditor.commands.focus()
+
+      mainEditor.commands.setContent(newFullHTML)
+      // Highlight the edited region
+      setTimeout(() => {
+        if (mainEditor.highlightRange) {
+          const currentText = mainEditor.getText()
+          const idx = currentText.indexOf(editedText)
+          if (idx >= 0) {
+            mainEditor.highlightRange(idx + 1, idx + 1 + editedText.length)
+          }
+        }
+      }, 30)
     } else {
       const currentHTML = mainEditor.getHTML()
       setVersions(prev => [...prev, currentHTML])
@@ -99,7 +143,7 @@ export default function App() {
       setActiveEditor('main')
       mainEditor.commands.focus()
     }
-  }, [mainEditor, isZoomed])
+  }, [mainEditor, isZoomed, zoomState])
 
   const handleRefine = useCallback(async (instruction) => {
     if (!mainEditor) return
@@ -126,8 +170,12 @@ export default function App() {
     const { from, to } = mainEditor.state.selection
     const fullHTML = mainEditor.getHTML()
 
-    // Save zoom state
-    setZoomState({ fullHTML, selectedText, from, to })
+    // Preserve leading/trailing whitespace from selection
+    const leadingSpace = selectedText.match(/^(\s*)/)[0]
+    const trailingSpace = selectedText.match(/(\s*)$/)[0]
+
+    // Save zoom state with whitespace info
+    setZoomState({ fullHTML, selectedText, from, to, leadingSpace, trailingSpace })
 
     // Replace editor content with just the selected text
     mainEditor.commands.setContent(selectedText)
@@ -266,6 +314,7 @@ export default function App() {
                   onRefineAll={handleRefine}
                   onRefineSelection={handleFloatingRefine}
                   isLoading={isAnalyzing}
+                  hidden={isAnalyzing}
                 />
               )}
 
@@ -294,6 +343,7 @@ export default function App() {
             result={aiResult}
             isLoading={isAnalyzing}
             streamPhase={streamPhase}
+            isEditing={activeEditor === 'ai'}
           />
         </aside>
       </main>

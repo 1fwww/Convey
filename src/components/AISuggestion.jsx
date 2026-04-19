@@ -134,8 +134,8 @@ export function AISuggestion({ result, onReplace, onDismiss, onFocusEditor }) {
   const showDiff = !isFocused && !isEdited
 
   const handleClickDiff = () => {
-    // Set focused first so React unhides the editor, then focus on next tick
     setIsFocused(true)
+    setTooltip(null) // Clear any visible tooltip
     setTimeout(() => {
       if (editor) editor.commands.focus()
     }, 0)
@@ -211,8 +211,8 @@ export function AISuggestion({ result, onReplace, onDismiss, onFocusEditor }) {
         />
       )}
 
-      {/* Tooltip portal — renders at body level to avoid overflow clipping */}
-      {tooltip && createPortal(
+      {/* Tooltip portal — only in learning mode */}
+      {showDiff && tooltip && createPortal(
         <div
           className="diff-tooltip"
           style={{

@@ -1,4 +1,4 @@
-export function InsightPanel({ result, isLoading, streamPhase }) {
+export function InsightPanel({ result, isLoading, streamPhase, isEditing }) {
   if (isLoading) {
     return (
       <div className="insight-panel">
@@ -26,11 +26,20 @@ export function InsightPanel({ result, isLoading, streamPhase }) {
     )
   }
 
+  // When user is editing the AI suggestion, hide explanations to avoid distraction
+  if (isEditing) {
+    return (
+      <div className="insight-panel">
+        <div className="insight-empty">
+          Editing...
+        </div>
+      </div>
+    )
+  }
+
   const { affirm, changes } = result
   const totalChanges = changes?.length || 0
 
-  // Pick the most interesting change as the key insight
-  // Prefer grammar > naturalness > others, or just the first with an explanation
   const keyInsight = changes?.find(c => c.category === 'grammar')
     || changes?.find(c => c.category === 'naturalness')
     || changes?.[0]
