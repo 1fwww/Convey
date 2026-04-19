@@ -12,6 +12,7 @@ export function RefineAnchor({ editor, onRefineAll, onRefineSelection, isLoading
   const [expanded, setExpanded] = useState(false)
   const [value, setValue] = useState('')
   const [selectionRange, setSelectionRange] = useState(null) // { from, to } for selection mode
+  const [isFullSelect, setIsFullSelect] = useState(false) // Cmd+A — activated state but "Refine all" text
   const inputRef = useRef(null)
   const containerRef = useRef(null)
 
@@ -19,56 +20,95 @@ export function RefineAnchor({ editor, onRefineAll, onRefineSelection, isLoading
   useEffect(() => {
     if (!editor) return
 
+    const getTextBottom = () => {
+      const scrollEl = editor.view.dom.closest('.paper-scroll')
+      const scrollRect = scrollEl ? scrollEl.getBoundingClientRect() : editor.view.dom.getBoundingClientRect()
+      const scrollTop = scrollEl ? scrollEl.scrollTop : 0
+
+      // Walk doc to find last position with actual text
+      let lastTextPos = 1
+      editor.state.doc.descendants((node, pos) => {
+        if (node.isText && node.text.trim()) {
+          lastTextPos = pos + node.nodeSize
+        }
+      })
+      try {
+        const coords = editor.view.coordsAtPos(lastTextPos)
+        return coords.bottom - scrollRect.top + scrollTop
+      } catch {
+        return editor.view.dom.offsetHeight
+      }
+    }
+
+    let resetTimer = null
+
     const updatePosition = () => {
       const { from, to } = editor.state.selection
-      const editorRect = editor.view.dom.getBoundingClientRect()
       const scrollParent = editor.view.dom.closest('.paper-scroll')
 
       const docSize = editor.state.doc.content.size
       const isAllSelected = from <= 1 && to >= docSize - 1
 
       if (to - from > 0) {
-        // Highlight selected text
-        if (editor.highlightRange) {
-          editor.highlightRange(from, to)
-        }
+        // Cancel any pending reset — new selection takes priority
+        clearTimeout(resetTimer)
 
         if (isAllSelected) {
-          // Full select (Cmd+A) — treat as "refine all", anchor at end
-          const endPos = editor.state.doc.content.size
-          const coords = editor.view.coordsAtPos(endPos)
-          const scrollTop = scrollParent ? scrollParent.scrollTop : 0
-          setAnchorPos({ top: coords.bottom - editorRect.top + scrollTop })
-          setHasSelection(false)
-        } else {
-          // Partial select — anchor below selection
-          const endCoords = editor.view.coordsAtPos(to)
-          const scrollTop = scrollParent ? scrollParent.scrollTop : 0
-          setAnchorPos({ top: endCoords.bottom - editorRect.top + scrollTop })
+          setAnchorPos({ top: getTextBottom() })
           setHasSelection(true)
+          setIsFullSelect(true)
+          setSelectionRange({ from, to })
+        } else {
+          const scrollEl = scrollParent || editor.view.dom
+          const scrollRect = scrollEl.getBoundingClientRect()
+          const scrollTop = scrollParent ? scrollParent.scrollTop : 0
+
+          // Use native selection bounding rect — single rect, always reliable
+          const nativeSel = window.getSelection()
+          let bottom
+          if (nativeSel?.rangeCount > 0) {
+            const rect = nativeSel.getRangeAt(0).getBoundingClientRect()
+            bottom = rect.bottom
+          } else {
+            bottom = editor.view.coordsAtPos(to).bottom
+          }
+
+          setAnchorPos({ top: bottom - scrollRect.top + scrollTop })
+          setHasSelection(true)
+          setIsFullSelect(false)
           setSelectionRange({ from, to })
         }
       } else {
-        const endPos = editor.state.doc.content.size
-        const coords = editor.view.coordsAtPos(endPos)
-        const scrollTop = scrollParent ? scrollParent.scrollTop : 0
-        setAnchorPos({ top: coords.bottom - editorRect.top + scrollTop })
+        // Reset state immediately but delay position change
         if (hasSelection) {
           setValue('')
           setSelectionRange(null)
+          setIsFullSelect(false)
         }
         setHasSelection(false)
         setExpanded(false)
+
+        // Delay moving anchor to text bottom — avoids jump when quickly re-selecting
+        clearTimeout(resetTimer)
+        resetTimer = setTimeout(() => {
+          setAnchorPos({ top: getTextBottom() })
+        }, 150)
       }
     }
 
+    const handleUpdate = () => {
+      clearTimeout(resetTimer)
+      setAnchorPos({ top: getTextBottom() })
+    }
+
     editor.on('selectionUpdate', updatePosition)
-    editor.on('update', updatePosition)
+    editor.on('update', handleUpdate)
     setTimeout(updatePosition, 100)
 
     return () => {
+      clearTimeout(resetTimer)
       editor.off('selectionUpdate', updatePosition)
-      editor.off('update', updatePosition)
+      editor.off('update', handleUpdate)
     }
   }, [editor, hasSelection])
 
@@ -79,11 +119,10 @@ export function RefineAnchor({ editor, onRefineAll, onRefineSelection, isLoading
     const handleClickOutside = (e) => {
       if (containerRef.current && !containerRef.current.contains(e.target)) {
         setExpanded(false)
-        // Refine all mode: clear highlight on collapse
-        if (!hasSelection && editor?.clearHighlight) {
+        // Clear decoration on collapse
+        if (editor?.clearHighlight) {
           editor.clearHighlight()
         }
-        // Selection mode: keep highlight (user may still want to refine)
       }
     }
 
@@ -92,16 +131,21 @@ export function RefineAnchor({ editor, onRefineAll, onRefineSelection, isLoading
   }, [expanded, editor, hasSelection])
 
   const handleIconClick = useCallback(() => {
-    setExpanded(true)
-    if (!hasSelection && editor) {
-      // Refine all: highlight all text
-      const docSize = editor.state.doc.content.size
-      if (editor.highlightRange) {
+    if (editor?.highlightRange) {
+      // Read selection directly from editor state at click time
+      const { from, to } = editor.state.selection
+      if (to - from > 0) {
+        // Convert native selection to decoration BEFORE input steals focus
+        editor.highlightRange(from, to)
+      } else {
+        // Refine all: highlight all text
+        const docSize = editor.state.doc.content.size
         editor.highlightRange(1, docSize)
       }
     }
+    setExpanded(true)
     setTimeout(() => inputRef.current?.focus(), 0)
-  }, [editor, hasSelection])
+  }, [editor])
 
   const handleSubmit = useCallback((instruction) => {
     // Clear highlight on submit
@@ -109,7 +153,7 @@ export function RefineAnchor({ editor, onRefineAll, onRefineSelection, isLoading
       editor.clearHighlight()
     }
 
-    if (hasSelection && selectionRange && editor) {
+    if (hasSelection && !isFullSelect && selectionRange && editor) {
       const selectedText = editor.state.doc.textBetween(selectionRange.from, selectionRange.to)
       onRefineSelection(selectedText, instruction || null)
     } else {
@@ -118,7 +162,8 @@ export function RefineAnchor({ editor, onRefineAll, onRefineSelection, isLoading
     setExpanded(false)
     setValue('')
     setSelectionRange(null)
-  }, [editor, hasSelection, selectionRange, onRefineAll, onRefineSelection])
+    setIsFullSelect(false)
+  }, [editor, hasSelection, isFullSelect, selectionRange, onRefineAll, onRefineSelection])
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Enter') {
@@ -127,8 +172,8 @@ export function RefineAnchor({ editor, onRefineAll, onRefineSelection, isLoading
     }
     if (e.key === 'Escape') {
       setExpanded(false)
-      // Refine all: clear highlight
-      if (!hasSelection && editor?.clearHighlight) {
+      // Clear decoration on escape
+      if (editor?.clearHighlight) {
         editor.clearHighlight()
       }
       editor?.commands.focus()
@@ -145,13 +190,14 @@ export function RefineAnchor({ editor, onRefineAll, onRefineSelection, isLoading
       onMouseDown={(e) => {
         if (e.target !== inputRef.current) e.preventDefault()
       }}
+      onClick={(e) => e.stopPropagation()}
     >
       {!expanded && (
         <button
           className="refine-anchor-icon"
           onClick={handleIconClick}
           disabled={isLoading}
-          aria-label={hasSelection ? 'Refine selection' : 'Refine all'}
+          aria-label={hasSelection && !isFullSelect ? 'Refine selection' : 'Refine all'}
         >
           ✦
         </button>
@@ -164,7 +210,7 @@ export function RefineAnchor({ editor, onRefineAll, onRefineSelection, isLoading
             onClick={() => handleSubmit(null)}
             disabled={isLoading}
           >
-            ✦ {hasSelection ? 'Refine selection' : 'Refine all'}
+            ✦ {hasSelection && !isFullSelect ? 'Refine selection' : 'Refine all'}
           </button>
           <span className="refine-anchor-or">or</span>
           <div className="refine-anchor-input-wrap">

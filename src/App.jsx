@@ -10,15 +10,15 @@ export default function App() {
   const [versions, setVersions] = useState([])
   const [aiResult, setAiResult] = useState(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [streamPhase, setStreamPhase] = useState('idle') // 'idle' | 'connecting' | 'streaming'
+  const [streamPhase, setStreamPhase] = useState('idle')
   const [mainEditor, setMainEditor] = useState(null)
   const [activeEditor, setActiveEditor] = useState('main')
 
-  // Zoom-in state for partial refine
-  const [zoomState, setZoomState] = useState(null)
-  // zoomState = { fullHTML: string, selectedText: string, from: number, to: number }
+  // Selection refine state — no zoom, just track what was selected
+  const [selectionRefine, setSelectionRefine] = useState(null)
+  // { selectedText, from, to, leadingSpace, trailingSpace }
 
-  const isZoomed = zoomState !== null
+  const isSelectionMode = selectionRefine !== null
 
   // Paper: dynamic height, only grows within a session
   const paperRef = useRef(null)
@@ -27,26 +27,24 @@ export default function App() {
   useEffect(() => {
     const el = paperRef.current
     if (!el) return
-    const BREATHING_ROOM = 48 // px of extra space below content
+    const BREATHING_ROOM = 48
     const observer = new ResizeObserver(() => {
-      // Measure the natural content height (toolbar + scroll content)
       const scrollEl = el.querySelector('.paper-scroll')
       if (!scrollEl) return
-      const contentH = scrollEl.scrollHeight + el.querySelector('.toolbar')?.offsetHeight + BREATHING_ROOM
-      const clamped = Math.min(contentH, 600) // respect max-height
+      const contentH = scrollEl.scrollHeight + (el.querySelector('.toolbar')?.offsetHeight || 0) + BREATHING_ROOM
+      const clamped = Math.min(contentH, 600)
       if (clamped > paperMaxObserved.current) {
         paperMaxObserved.current = clamped
         el.style.minHeight = `${clamped}px`
       }
     })
     observer.observe(el)
-    // Also observe the scroll area for content changes
     const scrollEl = el.querySelector('.paper-scroll')
     if (scrollEl) observer.observe(scrollEl)
     return () => observer.disconnect()
   }, [])
 
-  const currentEditor = activeEditor === 'ai' ? null : mainEditor
+  // ── Handlers ──
 
   const handleContentReady = useCallback(async (editor) => {
     const html = editor.getHTML()
@@ -62,7 +60,6 @@ export default function App() {
       setAiResult(result)
     } catch (err) {
       console.error('AI analysis failed:', err)
-      alert('AI analysis failed: ' + err.message)
     }
     setIsAnalyzing(false)
     setStreamPhase('idle')
@@ -72,78 +69,58 @@ export default function App() {
     setAiResult(null)
     setActiveEditor('main')
 
-    if (isZoomed && mainEditor && zoomState) {
-      const { fullHTML, selectedText, from, to } = zoomState
-      setZoomState(null)
-      mainEditor.commands.setContent(fullHTML)
-      // Highlight the original selection range
-      setTimeout(() => {
-        if (mainEditor.highlightRange) {
-          mainEditor.highlightRange(from, to)
-        }
-      }, 30)
+    if (isSelectionMode && mainEditor) {
+      // Clear dim, keep highlight + selectionRefine so anchor stays
+      mainEditor.clearDim?.()
+    } else {
+      mainEditor?.clearAll?.()
     }
-  }, [isZoomed, mainEditor, zoomState])
+  }, [isSelectionMode, mainEditor])
 
   const handleRestore = useCallback((html) => {
     if (!mainEditor) return
-    const currentHTML = mainEditor.getHTML()
-    setVersions(prev => [...prev, currentHTML])
+    setVersions(prev => [...prev, mainEditor.getHTML()])
     mainEditor.commands.setContent(html)
   }, [mainEditor])
 
   const handleReplace = useCallback((html) => {
     if (!mainEditor) return
 
-    if (isZoomed && zoomState) {
-      // Apply and zoom out in one step — merge edited fragment back
-      const { fullHTML, selectedText, leadingSpace, trailingSpace } = zoomState
+    if (isSelectionMode && selectionRefine) {
+      const { from, to, leadingSpace, trailingSpace } = selectionRefine
 
-      setVersions(prev => [...prev, fullHTML])
+      setVersions(prev => [...prev, mainEditor.getHTML()])
 
-      // Get the edited text, restore preserved whitespace
+      // Extract plain text from AI HTML, restore whitespace
       const editedDiv = document.createElement('div')
       editedDiv.innerHTML = html
       let editedText = editedDiv.textContent || ''
-      editedText = leadingSpace + editedText.trim() + trailingSpace
+      editedText = (leadingSpace || '') + editedText.trim() + (trailingSpace || '')
 
-      // Merge back into full text
-      const tempDiv = document.createElement('div')
-      tempDiv.innerHTML = fullHTML
-      const fullText = tempDiv.textContent || ''
+      // Replace the selection range in-place using ProseMirror directly
+      const { state } = mainEditor.view
+      const tr = state.tr.insertText(editedText, from, to)
+      mainEditor.view.dispatch(tr)
 
-      let newFullHTML = fullHTML
-      if (fullText.includes(selectedText)) {
-        const idx = fullText.indexOf(selectedText)
-        const before = fullText.substring(0, idx)
-        const after = fullText.substring(idx + selectedText.length)
-        newFullHTML = `<p>${before}${editedText}${after}</p>`
-      }
+      const newTo = from + editedText.length
 
-      setZoomState(null)
+      setSelectionRefine(null)
       setAiResult(null)
       setActiveEditor('main')
 
-      mainEditor.commands.setContent(newFullHTML)
-      // Highlight the edited region
+      // Clear dim, highlight the replaced region
+      mainEditor.clearDim?.()
       setTimeout(() => {
-        if (mainEditor.highlightRange) {
-          const currentText = mainEditor.getText()
-          const idx = currentText.indexOf(editedText)
-          if (idx >= 0) {
-            mainEditor.highlightRange(idx + 1, idx + 1 + editedText.length)
-          }
-        }
+        mainEditor.highlightRange?.(from, newTo)
       }, 30)
     } else {
-      const currentHTML = mainEditor.getHTML()
-      setVersions(prev => [...prev, currentHTML])
+      setVersions(prev => [...prev, mainEditor.getHTML()])
       mainEditor.commands.setContent(html)
       setAiResult(prev => ({ ...prev, applied: true }))
       setActiveEditor('main')
       mainEditor.commands.focus()
     }
-  }, [mainEditor, isZoomed, zoomState])
+  }, [mainEditor, isSelectionMode, selectionRefine])
 
   const handleRefine = useCallback(async (instruction) => {
     if (!mainEditor) return
@@ -163,24 +140,42 @@ export default function App() {
     setStreamPhase('idle')
   }, [mainEditor])
 
-  // Floating refine — zoom into selected text
-  const handleFloatingRefine = useCallback(async (selectedText, instruction) => {
+  const handleSelectionRefine = useCallback(async (selectedText, instruction) => {
     if (!mainEditor) return
 
     const { from, to } = mainEditor.state.selection
-    const fullHTML = mainEditor.getHTML()
-
-    // Preserve leading/trailing whitespace from selection
     const leadingSpace = selectedText.match(/^(\s*)/)[0]
     const trailingSpace = selectedText.match(/(\s*)$/)[0]
 
-    // Save zoom state with whitespace info
-    setZoomState({ fullHTML, selectedText, from, to, leadingSpace, trailingSpace })
+    // Calculate selection bottom for positioning AI suggestion near it
+    const scrollEl = mainEditor.view.dom.closest('.paper-scroll')
+    const scrollRect = scrollEl?.getBoundingClientRect()
+    const scrollTop = scrollEl?.scrollTop || 0
+    let selectionBottom = null
+    try {
+      // Use coordsAtPos — always available, doesn't depend on native selection
+      const coords = mainEditor.view.coordsAtPos(to)
+      if (scrollRect) {
+        selectionBottom = coords.bottom - scrollRect.top + scrollTop
+      }
+    } catch { /* fallback: will render in normal flow */ }
 
-    // Replace editor content with just the selected text
-    mainEditor.commands.setContent(selectedText)
+    setSelectionRefine({ selectedText, from, to, leadingSpace, trailingSpace, selectionBottom })
 
-    // Trigger AI analysis on the selection
+    // Scroll selected text to top of visible area
+    if (scrollEl && scrollRect) {
+      try {
+        const selTopCoords = mainEditor.view.coordsAtPos(from)
+        const selTop = selTopCoords.top - scrollRect.top + scrollTop
+        scrollEl.scrollTo({ top: Math.max(0, selTop - 16), behavior: 'smooth' })
+      } catch { /* skip scroll if coords fail */ }
+    }
+
+    // Dim everything except the selection, highlight the selection
+    mainEditor.dimExcept?.(from, to)
+    mainEditor.highlightRange?.(from, to)
+
+    // Analyze just the selected text
     setAiResult(null)
     setIsAnalyzing(true)
     setStreamPhase('connecting')
@@ -199,52 +194,6 @@ export default function App() {
     setStreamPhase('idle')
   }, [mainEditor])
 
-  // Zoom out — merge edited fragment back into full text
-  const handleZoomOut = useCallback(() => {
-    if (!mainEditor || !zoomState) return
-
-    const editedFragment = mainEditor.getHTML()
-    const { fullHTML, selectedText } = zoomState
-
-    // Save full text as a version
-    setVersions(prev => [...prev, fullHTML])
-
-    // Replace the selected part in the original full text
-    // Simple approach: replace first occurrence of selectedText with edited version
-    const tempDiv = document.createElement('div')
-    tempDiv.innerHTML = fullHTML
-    const fullText = tempDiv.textContent || ''
-    const editedDiv = document.createElement('div')
-    editedDiv.innerHTML = editedFragment
-    const editedText = editedDiv.textContent || ''
-
-    // Reconstruct by replacing in HTML
-    // Use text-level replacement for reliability
-    let newFullHTML = fullHTML
-    if (fullText.includes(selectedText)) {
-      // Find and replace in the text content, preserving surrounding HTML
-      const idx = fullText.indexOf(selectedText)
-      const before = fullText.substring(0, idx)
-      const after = fullText.substring(idx + selectedText.length)
-      newFullHTML = `<p>${before}${editedText}${after}</p>`
-    }
-
-    mainEditor.commands.setContent(newFullHTML)
-    setZoomState(null)
-    setAiResult(null)
-
-    // Restore selection on the edited region so user sees what was changed
-    setTimeout(() => {
-      const fullText = mainEditor.getText()
-      const idx = fullText.indexOf(editedText)
-      if (idx >= 0) {
-        // +1 offset for ProseMirror doc node
-        mainEditor.commands.setTextSelection({ from: idx + 1, to: idx + 1 + editedText.length })
-      }
-      mainEditor.commands.focus()
-    }, 50)
-  }, [mainEditor, zoomState])
-
   const handleCopy = useCallback(() => {
     if (!mainEditor) return
     const html = mainEditor.getHTML()
@@ -258,33 +207,16 @@ export default function App() {
     }
   }, [mainEditor])
 
+  const handleEditorFocus = useCallback(() => {
+    setActiveEditor('main')
+  }, [])
+
   return (
     <div className="convey-app">
       <header className="topbar">
         <div className="topbar-left">
           <span className="logo">Convey</span>
           <span className="source-tag">Slack</span>
-          {isZoomed && (
-            <span className="zoom-indicator">
-              Refining selection
-              <button
-                className="zoom-action apply"
-                onClick={handleZoomOut}
-                aria-label="Apply and return to full text"
-                title="Apply"
-              >✓</button>
-              <button
-                className="zoom-action cancel"
-                onClick={() => {
-                  mainEditor.commands.setContent(zoomState.fullHTML)
-                  setZoomState(null)
-                  setAiResult(null)
-                }}
-                aria-label="Cancel and return to full text"
-                title="Cancel"
-              >✕</button>
-            </span>
-          )}
         </div>
         <nav className="topbar-right" aria-label="Actions">
           <button className="btn btn-ghost" onClick={handleCopy}>Copy</button>
@@ -296,30 +228,54 @@ export default function App() {
         <section className="col-editor" aria-label="Editor">
           <div className="paper" ref={paperRef}>
             <Toolbar
-              editor={currentEditor || mainEditor}
-              versions={isZoomed ? [] : versions}
+              editor={mainEditor}
+              versions={versions}
               onRestore={handleRestore}
             />
 
-            <div className="paper-scroll" style={{ position: 'relative' }}>
+            <div
+              className={`paper-scroll ${isSelectionMode ? 'selection-mode' : ''}`}
+              style={{ position: 'relative' }}
+              onClick={(e) => {
+                // Click on empty area → focus at end
+                if (e.target.classList.contains('paper-scroll') && mainEditor) {
+                  mainEditor.commands.focus()
+                  mainEditor.commands.setTextSelection(mainEditor.state.doc.content.size)
+                }
+                // Clear decorations on click — defer so ProseMirror places cursor first
+                if (!isAnalyzing && mainEditor) {
+                  setTimeout(() => {
+                    if (isSelectionMode && !aiResult) {
+                      setSelectionRefine(null)
+                      mainEditor.clearAll?.()
+                    } else if (!isSelectionMode) {
+                      mainEditor.clearHighlight?.()
+                    }
+                  }, 0)
+                }
+              }}
+            >
               <Editor
                 onReady={handleContentReady}
                 onEditorInstance={setMainEditor}
-                onFocus={() => setActiveEditor('main')}
+                onFocus={handleEditorFocus}
               />
 
-              {!isZoomed && (
-                <RefineAnchor
-                  editor={mainEditor}
-                  onRefineAll={handleRefine}
-                  onRefineSelection={handleFloatingRefine}
-                  isLoading={isAnalyzing}
-                  hidden={isAnalyzing}
-                />
-              )}
+              <RefineAnchor
+                editor={mainEditor}
+                onRefineAll={handleRefine}
+                onRefineSelection={handleSelectionRefine}
+                isLoading={isAnalyzing}
+                hidden={isAnalyzing}
+              />
 
               {isAnalyzing && (
-                <div className="ai-suggestion-loading">
+                <div
+                  className={`ai-suggestion-loading ${isSelectionMode ? 'selection-overlay' : ''}`}
+                  style={selectionRefine?.selectionBottom ? {
+                    top: selectionRefine.selectionBottom,
+                  } : undefined}
+                >
                   <div className="shimmer-line" style={{ width: '92%' }} />
                   <div className="shimmer-line" style={{ width: '78%' }} />
                   <div className="shimmer-line" style={{ width: '85%' }} />
@@ -327,12 +283,23 @@ export default function App() {
               )}
 
               {aiResult && !aiResult.applied && (
-                <AISuggestion
-                  result={aiResult}
-                  onReplace={handleReplace}
-                  onDismiss={handleDismissAI}
-                  onFocusEditor={(which) => setActiveEditor(which)}
-                />
+                <div
+                  ref={(el) => {
+                    // Auto-scroll to show AI response fully when it appears
+                    if (el) setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50)
+                  }}
+                  className={isSelectionMode ? 'selection-overlay' : undefined}
+                  style={selectionRefine?.selectionBottom ? {
+                    top: selectionRefine.selectionBottom,
+                  } : undefined}
+                >
+                  <AISuggestion
+                    result={aiResult}
+                    onReplace={handleReplace}
+                    onDismiss={handleDismissAI}
+                    onFocusEditor={(which) => setActiveEditor(which)}
+                  />
+                </div>
               )}
             </div>
           </div>

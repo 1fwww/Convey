@@ -154,11 +154,6 @@ export function AISuggestion({ result, onReplace, onDismiss, onFocusEditor }) {
     }
   }
 
-  // Expose this editor instance for toolbar binding
-  if (editor) {
-    editor._isAISuggestion = true
-  }
-
   return (
     <div
       className={`ai-suggestion ${showDiff ? 'learning' : 'editing'}`}
@@ -232,6 +227,3 @@ export function AISuggestion({ result, onReplace, onDismiss, onFocusEditor }) {
     </div>
   )
 }
-
-// Export a way to get the AI editor instance
-AISuggestion.getEditor = null

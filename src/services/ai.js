@@ -1,7 +1,7 @@
 // Set your API key here for local dev (do NOT commit)
 const ANTHROPIC_API_KEY = import.meta.env.VITE_ANTHROPIC_KEY || ''
 
-const SYSTEM_PROMPT = `You are a writing assistant for non-native English professionals (primarily Chinese-speaking, working in US tech). The user will give you a piece of workplace writing (Slack message, email, etc).
+const SYSTEM_PROMPT = `You are a writing assistant for non-native English professionals (primarily Chinese-speaking, working in US tech). The user will give you a piece of workplace writing (Slack message, email, etc). The text is provided as HTML.
 
 CRITICAL RULES:
 - Make MINIMAL, SURGICAL changes. Change only the words that need changing. Keep everything else EXACTLY as the user wrote it.
@@ -9,17 +9,18 @@ CRITICAL RULES:
 - Do NOT make it more formal. The user writes casually in Slack — respect that.
 - Every change should be a specific fix: a word swap, an added article, a tense correction. Prefer targeted fixes over sentence rewrites.
 - If the text is already good, say so and make zero or few changes.
+- PRESERVE all original formatting: lists (<ul>, <ol>, <li>), paragraphs (<p>), line breaks, bold, italic, links, code blocks, blockquotes. Do NOT add or remove any HTML structure.
 
 Your job:
-1. Provide a revised version with the necessary fixes applied. Keep as much of the original wording as possible.
-2. For the revisedHTML field: wrap ONLY the changed words in diff spans. Added words: <span class='diff-add'>word</span>. Removed words: <span class='diff-remove'>word</span>. Everything else stays as plain text.
+1. Provide a revised version with the necessary fixes applied. Keep as much of the original wording AND formatting as possible. Return as HTML preserving the original structure.
+2. For the revisedHTML field: keep the same HTML structure, but wrap ONLY the changed words in diff spans. Added words: <span class='diff-add'>word</span>. Removed words: <span class='diff-remove'>word</span>. Everything else stays as-is including all HTML tags.
 3. Identify each specific change and explain WHY briefly. Relate to Chinese-English differences when relevant.
 4. Note what the user did well (affirm before suggesting).
 
 Return ONLY valid JSON in this exact format:
 {
-  "revised": "The improved text — keep as close to original as possible",
-  "revisedHTML": "Same text with ONLY changed words wrapped in diff spans",
+  "revised": "The improved text as HTML — keep original structure and as close to original as possible",
+  "revisedHTML": "Same HTML with ONLY changed words wrapped in diff spans",
   "affirm": "One sentence about what's working well in the original",
   "changes": [
     {
@@ -31,12 +32,12 @@ Return ONLY valid JSON in this exact format:
   ]
 }`
 
-const REFINE_SYSTEM_PROMPT = `You are a writing assistant. The user has a piece of text and wants a specific refinement. Apply their instruction while keeping the same output format.
+const REFINE_SYSTEM_PROMPT = `You are a writing assistant. The user has a piece of text (provided as HTML) and wants a specific refinement. Apply their instruction while preserving the original HTML formatting (lists, paragraphs, bold, italic, etc.).
 
 Return ONLY valid JSON in this exact format:
 {
-  "revised": "The refined text as plain text",
-  "revisedHTML": "The refined text as HTML with changes highlighted using <span class='diff-add'>added</span> and <span class='diff-remove'>removed</span>",
+  "revised": "The refined text as HTML preserving original structure",
+  "revisedHTML": "The refined HTML with changes highlighted using <span class='diff-add'>added</span> and <span class='diff-remove'>removed</span>",
   "affirm": "Brief positive note",
   "changes": [
     {
@@ -56,8 +57,8 @@ export async function analyzeText(html, instruction = null, { onStreamStart } = 
 
   const systemPrompt = instruction ? REFINE_SYSTEM_PROMPT : SYSTEM_PROMPT
   const userMessage = instruction
-    ? `Text:\n${stripHTML(html)}\n\nInstruction: ${instruction}`
-    : `Text:\n${stripHTML(html)}`
+    ? `Text:\n${html}\n\nInstruction: ${instruction}`
+    : `Text:\n${html}`
 
   const response = await fetch('/api/anthropic/v1/messages', {
     method: 'POST',
@@ -124,12 +125,6 @@ export async function analyzeText(html, instruction = null, { onStreamStart } = 
   const parsed = JSON.parse(jsonMatch[0])
   console.log('AI parsed:', parsed)
   return parsed
-}
-
-function stripHTML(html) {
-  const div = document.createElement('div')
-  div.innerHTML = html
-  return div.textContent || ''
 }
 
 function getMockResult() {

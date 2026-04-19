@@ -106,46 +106,6 @@ body {
   border-radius: var(--radius-sm);
 }
 
-.zoom-indicator {
-  font-size: 11px;
-  color: var(--brand-text);
-  background: var(--brand-dim);
-  padding: 2px 4px 2px 8px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--brand-border);
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.zoom-action {
-  width: 20px;
-  height: 20px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: none;
-  border-radius: 3px;
-  cursor: pointer;
-  font-size: 11px;
-  transition: all 0.1s;
-}
-
-.zoom-action.apply {
-  color: var(--green);
-}
-.zoom-action.apply:hover {
-  background: var(--green-dim);
-}
-
-.zoom-action.cancel {
-  color: var(--text-dim);
-}
-.zoom-action.cancel:hover {
-  color: var(--red);
-  background: var(--red-dim);
-}
 
 .topbar-right {
   display: flex;
@@ -373,23 +333,45 @@ body {
   outline: none;
 }
 
-.paper-editor p {
+.paper-editor p,
+.paper-editor ul,
+.paper-editor ol {
   margin-bottom: 0.5em;
 }
 
-.paper-editor p:last-child {
+.paper-editor p:last-child,
+.paper-editor ul:last-child,
+.paper-editor ol:last-child,
+.paper-editor blockquote:last-child {
   margin-bottom: 0;
 }
 
-/* Hide native selection — we use decoration-based highlight instead */
+/* Native selection — green to match brand */
 .paper-editor ::selection {
-  background: transparent;
+  background: oklch(0.55 0.08 160 / 0.2);
 }
 
 /* Editor highlight — unified highlight for selection & refine flows */
 .editor-highlight {
   background: oklch(0.55 0.08 160 / 0.2);
   border-radius: 2px;
+}
+
+/* Dimmed text — spotlight effect during selection refine */
+.editor-dimmed {
+  opacity: 0.25;
+  transition: opacity 0.2s ease;
+}
+
+/* Opaque overlay below selection — covers all dimmed text beneath */
+.selection-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--paper);
+  z-index: 2;
+  padding-bottom: var(--space-xl);
 }
 
 /* Hide Tiptap caret when editor is not focused */
@@ -474,6 +456,13 @@ body {
   overflow: visible;
 }
 
+/* Selection mode — reduce gap since no refine anchor */
+.selection-mode .ai-suggestion,
+.selection-mode .ai-suggestion-loading {
+  margin-top: var(--space-md);
+  overflow: visible;
+}
+
 /* Learning mode — left accent, subtle background */
 .ai-suggestion.learning {
   border-left-color: var(--green);
@@ -509,14 +498,20 @@ body {
 
 .ai-suggestion-actions {
   position: absolute;
-  right: var(--space-sm);
-  bottom: var(--space-sm);
+  right: var(--space-xl);
+  top: 0;
+  transform: translateY(-50%);
   display: flex;
-  gap: 2px;
+  gap: 0;
   opacity: 0;
-  transition: opacity 0.12s;
+  transition: opacity 0.15s;
   z-index: 5;
   pointer-events: none;
+  background: var(--paper);
+  border: 1px solid var(--border-dim);
+  border-radius: 20px;
+  padding: 3px;
+  box-shadow: var(--shadow-sm);
 }
 
 .ai-suggestion:hover .ai-suggestion-actions,
@@ -532,37 +527,32 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--border-dim);
-  background: var(--paper);
-  color: var(--text-dim);
-  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 50%;
   cursor: pointer;
   font-size: 12px;
-  transition: all 0.1s;
-  position: relative;
-  z-index: 10;
+  transition: all 0.12s;
 }
 
 .ai-action-btn:hover {
   color: var(--text-primary);
-  border-color: var(--border-active);
+  background: var(--elevated);
 }
 
 .ai-action-btn.apply:hover {
   color: var(--green);
-  border-color: var(--green-border);
   background: var(--green-dim);
 }
 
 .ai-action-btn.dismiss:hover {
   color: var(--red);
-  border-color: oklch(0.55 0.15 25 / 0.2);
   background: var(--red-dim);
 }
 
 .ai-action-btn.revert:hover {
   color: var(--brand-text);
-  border-color: var(--brand-border);
   background: var(--brand-dim);
 }
 
@@ -641,9 +631,7 @@ body {
   left: var(--space-xl);
   z-index: 20;
   transition: top 0.15s ease;
-  /* top is set to the bottom edge of the last line / selection —
-     margin pushes it down so it never overlaps */
-  margin-top: 6px;
+  margin-top: 8px;
 }
 
 /* Collapsed icon */
@@ -980,7 +968,6 @@ body {
   border-radius: var(--radius-sm);
 }
 
-/* (Floating refine removed — replaced by RefineAnchor) */
 
 /* ============ FOCUS VISIBLE ============ */
 :focus-visible {

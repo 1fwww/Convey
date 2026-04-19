@@ -3,55 +3,88 @@ import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
 import { useEffect, useRef } from 'react'
+import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 
-// ── Highlight plugin ──
-// Decoupled from selection. Call editor.highlightRange(from, to) to show,
-// editor.clearHighlight() to hide. Clicking inside the editor auto-clears.
+// ── Highlight + Dim plugin ──
+// highlight: green inline decoration for a specific range
+// dim: fades everything OUTSIDE a range (spotlight effect)
 const highlightKey = new PluginKey('highlight')
 
-function createHighlightPlugin() {
-  return new Plugin({
-    key: highlightKey,
-    state: {
-      init() { return { from: 0, to: 0 } },
-      apply(tr, prev) {
-        const meta = tr.getMeta(highlightKey)
-        if (meta) return meta
-        // If doc changed, try to map positions
-        if (tr.docChanged && prev.from !== prev.to) {
-          return {
-            from: tr.mapping.map(prev.from),
-            to: tr.mapping.map(prev.to),
-          }
-        }
-        return prev
-      },
-    },
-    props: {
-      decorations(state) {
-        const { from, to } = highlightKey.getState(state)
-        if (from === to) return DecorationSet.empty
-        try {
-          return DecorationSet.create(state.doc, [
-            Decoration.inline(from, to, { class: 'editor-highlight' }),
-          ])
-        } catch {
-          return DecorationSet.empty
-        }
-      },
-      handleClick(view) {
-        // Clear highlight on any click inside editor
-        const state = highlightKey.getState(view.state)
-        if (state && state.from !== state.to) {
-          view.dispatch(view.state.tr.setMeta(highlightKey, { from: 0, to: 0 }))
-        }
-        return false
-      },
-    },
-  })
-}
+const HighlightExtension = Extension.create({
+  name: 'highlight',
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: highlightKey,
+        state: {
+          init() { return { highlight: null, dim: null } },
+          // highlight: { from, to } or null
+          // dim: { from, to } or null — the range to KEEP visible; everything else is dimmed
+          apply(tr, prev) {
+            const meta = tr.getMeta(highlightKey)
+            if (meta) return { ...prev, ...meta }
+            if (tr.docChanged) {
+              const mapped = { ...prev }
+              if (prev.highlight) {
+                mapped.highlight = {
+                  from: tr.mapping.map(prev.highlight.from),
+                  to: tr.mapping.map(prev.highlight.to),
+                }
+              }
+              if (prev.dim) {
+                mapped.dim = {
+                  from: tr.mapping.map(prev.dim.from),
+                  to: tr.mapping.map(prev.dim.to),
+                }
+              }
+              return mapped
+            }
+            return prev
+          },
+        },
+        props: {
+          decorations(state) {
+            const { highlight, dim } = highlightKey.getState(state)
+            const decorations = []
+
+            // Highlight decoration
+            if (highlight && highlight.from !== highlight.to) {
+              try {
+                decorations.push(
+                  Decoration.inline(highlight.from, highlight.to, { class: 'editor-highlight' })
+                )
+              } catch { /* out of bounds */ }
+            }
+
+            // Dim decorations — everything outside the "spotlight" range
+            if (dim && dim.from !== dim.to) {
+              const docSize = state.doc.content.size
+              try {
+                if (dim.from > 1) {
+                  decorations.push(
+                    Decoration.inline(1, dim.from, { class: 'editor-dimmed' })
+                  )
+                }
+                if (dim.to < docSize) {
+                  decorations.push(
+                    Decoration.inline(dim.to, docSize, { class: 'editor-dimmed' })
+                  )
+                }
+              } catch { /* out of bounds */ }
+            }
+
+            return decorations.length > 0
+              ? DecorationSet.create(state.doc, decorations)
+              : DecorationSet.empty
+          },
+        },
+      }),
+    ]
+  },
+})
 
 export function Editor({ onReady, onEditorInstance, onFocus }) {
   const hasInitialized = useRef(false)
@@ -63,6 +96,7 @@ export function Editor({ onReady, onEditorInstance, onFocus }) {
       Placeholder.configure({
         placeholder: 'Paste your text or start typing...',
       }),
+      HighlightExtension,
     ],
     content: '',
     editorProps: {
@@ -78,32 +112,36 @@ export function Editor({ onReady, onEditorInstance, onFocus }) {
     },
   })
 
-  // Register highlight plugin and attach helper methods
   useEffect(() => {
     if (!editor) return
 
-    // Add the plugin to the editor
-    const { state } = editor.view
-    const plugins = [...state.plugins, createHighlightPlugin()]
-    editor.view.updateState(state.reconfigure({ plugins }))
-
-    // Attach convenience methods
     editor.highlightRange = (from, to) => {
       editor.view.dispatch(
-        editor.view.state.tr.setMeta(highlightKey, { from, to })
+        editor.view.state.tr.setMeta(highlightKey, { highlight: { from, to } })
       )
     }
     editor.clearHighlight = () => {
       editor.view.dispatch(
-        editor.view.state.tr.setMeta(highlightKey, { from: 0, to: 0 })
+        editor.view.state.tr.setMeta(highlightKey, { highlight: null })
       )
     }
-  }, [editor])
-
-  useEffect(() => {
-    if (editor) {
-      onEditorInstance(editor)
+    editor.dimExcept = (from, to) => {
+      editor.view.dispatch(
+        editor.view.state.tr.setMeta(highlightKey, { dim: { from, to } })
+      )
     }
+    editor.clearDim = () => {
+      editor.view.dispatch(
+        editor.view.state.tr.setMeta(highlightKey, { dim: null })
+      )
+    }
+    editor.clearAll = () => {
+      editor.view.dispatch(
+        editor.view.state.tr.setMeta(highlightKey, { highlight: null, dim: null })
+      )
+    }
+
+    onEditorInstance(editor)
   }, [editor, onEditorInstance])
 
   useEffect(() => {
